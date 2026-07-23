@@ -536,13 +536,20 @@ async function spinWheel(){
   }
 
   setTimeout(async ()=>{
-    const fresh = await getState();
-    if(!fresh){ alert("Se perdió la conexión con la sala, intenta girar de nuevo."); return; }
-    fresh.usedIds.push(item.id);
-    fresh.current = {id:item.id, type:item.type, text:item.text, answers:{}};
-    await setState(fresh);
-    soundReveal();
-    render();
+    try{
+      const fresh = await getState();
+      if(!fresh){
+        alert("No se pudo volver a leer la sala después de girar. Revisa tu conexión e intenta de nuevo.");
+        return;
+      }
+      fresh.usedIds.push(item.id);
+      fresh.current = {id:item.id, type:item.type, text:item.text, answers:{}};
+      await db.ref(roomKey()).set(fresh);
+      soundReveal();
+      render();
+    }catch(e){
+      alert("Error después de girar:\n" + (e && e.message ? e.message : e));
+    }
   }, 3000);
 }
 
