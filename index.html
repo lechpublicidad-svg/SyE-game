@@ -340,12 +340,20 @@ async function getState(){
   try{
     const snap = await db.ref(roomKey()).once('value');
     return snap.exists() ? snap.val() : null;
-  }catch(e){ console.error("Firebase get error", e); return null; }
+  }catch(e){
+    console.error("Firebase get error", e);
+    window.__lastFirebaseError = e;
+    return null;
+  }
 }
 async function setState(state){
   try{
     await db.ref(roomKey()).set(state);
-  }catch(e){ console.error("Firebase set error", e); }
+  }catch(e){
+    console.error("Firebase set error", e);
+    window.__lastFirebaseError = e;
+    alert("Error al guardar en Firebase:\n" + (e && e.message ? e.message : e));
+  }
 }
 
 function freshState(){
@@ -480,14 +488,20 @@ async function joinRoom(){
   if(!name || !room){ alert("Escribe tu nombre y el código de sala"); return; }
   ME = name; ROOM = room;
 
-  let state = await getState();
-  if(!state) state = freshState();
-  if(!state.players.includes(ME)){
-    state.players.push(ME);
+  let state;
+  try{
+    state = await getState();
+    if(!state) state = freshState();
+    if(!state.players.includes(ME)){
+      state.players.push(ME);
+    }
+    state.profiles = state.profiles || {};
+    state.profiles[ME] = { photo: myPhoto };
+    await db.ref(roomKey()).set(state);
+  }catch(e){
+    alert("Error al conectar con Firebase:\n" + (e && e.message ? e.message : e));
+    return;
   }
-  state.profiles = state.profiles || {};
-  state.profiles[ME] = { photo: myPhoto };
-  await setState(state);
   soundJoin();
 
   document.getElementById('screenLogin').classList.add('hidden');
