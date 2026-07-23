@@ -236,6 +236,7 @@
 
       <div class="fab-row">
         <button class="btn btn-secondary" id="btnAddCustom">+ Agregar mi pregunta/reto</button>
+        <button class="btn btn-secondary" id="btnResetRoom" style="max-width:110px;">Reiniciar sala</button>
       </div>
     </div>
 
@@ -395,22 +396,25 @@ function weightedTierPick(weights){
 function nextItem(state){
   const pool = buildPool(state);
   const available = pool.filter(p=>!state.usedIds.includes(p.id));
-  if(available.length===0) return null;
 
-  // Las preguntas/retos libres (agregados por ustedes) tienen prioridad alta:
-  // si existe al menos una libre disponible, hay 40% de probabilidad de que
-  // la ruleta caiga en una de ellas antes de mirar el banco fijo.
-  const freeAvailable = available.filter(p=>p.id.startsWith('c'));
-  if(freeAvailable.length>0 && Math.random() < 0.40){
-    return freeAvailable[Math.floor(Math.random()*freeAvailable.length)];
+  // 20% de probabilidad de que la ruleta caiga en "pregunta libre" o "reto libre":
+  // se abre una casilla para que quien tiene el turno la escriba ahí mismo.
+  if(Math.random() < 0.20){
+    const isReto = Math.random() < 0.5;
+    return {
+      id: 'libre-'+Date.now(),
+      type: isReto ? 'reto' : 'pregunta',
+      tier: 2,
+      text: null,
+      special: true
+    };
   }
 
-  const fixedAvailable = available.filter(p=>!p.id.startsWith('c'));
-  const pickFrom = fixedAvailable.length>0 ? fixedAvailable : available;
+  if(available.length===0) return null;
   const weights = pickTierWeights(state.history.length);
   const targetTier = weightedTierPick(weights);
-  let candidates = pickFrom.filter(p=>p.tier===targetTier);
-  if(candidates.length===0) candidates = pickFrom;
+  let candidates = available.filter(p=>p.tier===targetTier);
+  if(candidates.length===0) candidates = available;
   return candidates[Math.floor(Math.random()*candidates.length)];
 }
 
@@ -428,14 +432,38 @@ function renderTurn(state){
   document.getElementById('streakBox').textContent = `🔥 ${state.history.length} ronda${state.history.length===1?'':'s'} jugada${state.history.length===1?'':'s'}`;
 }
 
-function renderCurrentCard(state){
+async function renderCurrentCardAsync(state){
   const box = document.getElementById('currentCardBox');
   if(!state.current){ box.innerHTML=""; return; }
   const c = state.current;
+  const isSpinnerTurn = state.players[state.turnIndex % (state.players.length||1)] === ME;
+
+  if(c.special && !c.text){
+    if(isSpinnerTurn){
+      box.innerHTML = `
+        <div class="card">
+          <span class="card-tag ${c.type==='reto'?'tag-reto':'tag-pregunta'}">✨ ${c.type} libre</span>
+          <div class="card-text">¡Te tocó crear! Escribe tu propia ${c.type} para que la respondan entre los dos.</div>
+          <textarea id="freeTextBox" placeholder="Escribe tu ${c.type} aquí..."></textarea>
+          <button class="btn" id="btnSubmitFree" style="margin-top:10px;width:100%;">Lanzar ${c.type}</button>
+        </div>
+      `;
+      document.getElementById('btnSubmitFree').onclick = submitFreeText;
+    } else {
+      box.innerHTML = `
+        <div class="card">
+          <span class="card-tag ${c.type==='reto'?'tag-reto':'tag-pregunta'}">✨ ${c.type} libre</span>
+          <div class="card-text">Esperando a que ${state.players[state.turnIndex % state.players.length]} escriba su ${c.type}...</div>
+        </div>
+      `;
+    }
+    return;
+  }
+
   const alreadyAnswered = c.answers && c.answers[ME];
   box.innerHTML = `
     <div class="card">
-      <span class="card-tag ${c.type==='reto'?'tag-reto':'tag-pregunta'}">${c.type}</span>
+      <span class="card-tag ${c.type==='reto'?'tag-reto':'tag-pregunta'}">${c.special?'✨ ':''}${c.type}</span>
       <div class="card-text">${c.text}</div>
       ${alreadyAnswered ? `<div class="history-a"><b>Tu respuesta:</b> ${alreadyAnswered}</div>` : `
         <textarea id="answerBox" placeholder="Escribe tu respuesta..."></textarea>
@@ -446,6 +474,20 @@ function renderCurrentCard(state){
   if(!alreadyAnswered){
     document.getElementById('btnAnswer').onclick = submitAnswer;
   }
+}
+
+async function submitFreeText(){
+  const box = document.getElementById('freeTextBox');
+  const text = box.value.trim();
+  if(!text) return;
+  const state = await getState();
+  if(!state || !state.current) return;
+  state.current.text = text;
+  state.current.writtenBy = ME;
+  state.current.answers = state.current.answers || {};
+  state.current.answers[ME] = "✍️ (formuló esta " + state.current.type + ")";
+  await setState(state);
+  render();
 }
 
 function renderHistory(state){
@@ -477,7 +519,7 @@ async function render(){
   const state = await getState();
   if(!state) return;
   renderTurn(state);
-  renderCurrentCard(state);
+  await renderCurrentCardAsync(state);
   renderHistory(state);
   renderChat(state);
 }
@@ -521,7 +563,14 @@ async function spinWheel(){
     return;
   }
   const myTurn = state.players[state.turnIndex % (state.players.length||1)] === ME;
-  if(!myTurn || state.current) return;
+  if(state.current){
+    alert("Ya hay una pregunta activa sin responder todavía. Respóndela antes de volver a girar.\n\nPregunta actual: " + state.current.text);
+    return;
+  }
+  if(!myTurn){
+    alert("No es tu turno todavía. Le toca a: " + state.players[state.turnIndex % state.players.length]);
+    return;
+  }
 
   // Animamos primero, siempre, sin depender de nada más
   const wheel = document.getElementById('wheel');
@@ -543,7 +592,11 @@ async function spinWheel(){
         return;
       }
       fresh.usedIds.push(item.id);
-      fresh.current = {id:item.id, type:item.type, text:item.text, answers:{}};
+      if(item.special){
+        fresh.current = {id:item.id, type:item.type, text:null, special:true, writtenBy:null, answers:{}};
+      } else {
+        fresh.current = {id:item.id, type:item.type, text:item.text, answers:{}};
+      }
       await db.ref(roomKey()).set(fresh);
       soundReveal();
       render();
@@ -614,6 +667,15 @@ document.querySelectorAll('.tab').forEach(tab=>{
 });
 
 document.getElementById('btnAddCustom').onclick = ()=> document.getElementById('modalCustom').classList.remove('hidden');
+document.getElementById('btnResetRoom').onclick = async ()=>{
+  if(!confirm("Esto va a borrar la pregunta activa (si hay una atascada) para que puedan seguir jugando. El historial no se borra. ¿Continuar?")) return;
+  const state = await getState();
+  if(!state){ alert("No se pudo leer la sala."); return; }
+  state.current = null;
+  await db.ref(roomKey()).set(state);
+  render();
+  alert("Listo, la sala quedó libre para girar de nuevo.");
+};
 document.getElementById('btnCustomCancel').onclick = ()=> document.getElementById('modalCustom').classList.add('hidden');
 document.getElementById('btnCustomSave').onclick = saveCustom;
 document.getElementById('btnTypeQ').onclick = ()=>{ customType='q'; };
