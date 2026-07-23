@@ -235,8 +235,7 @@
       <div id="currentCardBox"></div>
 
       <div class="fab-row">
-        <button class="btn btn-secondary" id="btnAddCustom">+ Agregar mi pregunta/reto</button>
-        <button class="btn btn-secondary" id="btnResetRoom" style="max-width:110px;">Reiniciar sala</button>
+        <button class="btn btn-secondary" id="btnResetRoom">Reiniciar sala</button>
       </div>
     </div>
 
@@ -257,22 +256,6 @@
 
 </div>
 
-<!-- MODAL: add custom -->
-<div class="modal-overlay hidden" id="modalCustom">
-  <div class="modal">
-    <p style="font-weight:700;margin-bottom:12px;color:var(--deep);">Agrega tu pregunta o reto</p>
-    <label class="label">Tipo</label>
-    <div style="display:flex;gap:8px;margin-bottom:12px;">
-      <button class="btn btn-secondary" id="btnTypeQ" style="flex:1;padding:10px;">Pregunta</button>
-      <button class="btn btn-secondary" id="btnTypeR" style="flex:1;padding:10px;">Reto</button>
-    </div>
-    <textarea id="customText" placeholder="Escribe aquí tu pregunta o reto..."></textarea>
-    <div style="display:flex;gap:8px;margin-top:14px;">
-      <button class="btn btn-secondary" id="btnCustomCancel" style="flex:1;">Cancelar</button>
-      <button class="btn" id="btnCustomSave" style="flex:1;">Guardar</button>
-    </div>
-  </div>
-</div>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -637,18 +620,6 @@ async function sendChat(){
   render();
 }
 
-async function saveCustom(){
-  const text = document.getElementById('customText').value.trim();
-  if(!text) return;
-  const state = await getState();
-  state.customItems = state.customItems || [];
-  state.customItems.push({type: customType==='r'?'reto':'pregunta', tier:2, text: text, by: ME});
-  await setState(state);
-  document.getElementById('customText').value = "";
-  document.getElementById('modalCustom').classList.add('hidden');
-  alert("¡Agregado! Puede salir en cualquier momento de la ruleta.");
-}
-
 // EVENTS
 document.getElementById('btnEnter').onclick = joinRoom;
 document.getElementById('btnSpin').onclick = spinWheel;
@@ -666,7 +637,6 @@ document.querySelectorAll('.tab').forEach(tab=>{
   };
 });
 
-document.getElementById('btnAddCustom').onclick = ()=> document.getElementById('modalCustom').classList.remove('hidden');
 document.getElementById('btnResetRoom').onclick = async ()=>{
   if(!confirm("Esto va a borrar la pregunta activa (si hay una atascada) para que puedan seguir jugando. El historial no se borra. ¿Continuar?")) return;
   const state = await getState();
@@ -676,10 +646,7 @@ document.getElementById('btnResetRoom').onclick = async ()=>{
   render();
   alert("Listo, la sala quedó libre para girar de nuevo.");
 };
-document.getElementById('btnCustomCancel').onclick = ()=> document.getElementById('modalCustom').classList.add('hidden');
-document.getElementById('btnCustomSave').onclick = saveCustom;
-document.getElementById('btnTypeQ').onclick = ()=>{ customType='q'; };
-document.getElementById('btnTypeR').onclick = ()=>{ customType='r'; };
+
 </script>
 </body>
 </html>
