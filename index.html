@@ -230,6 +230,7 @@
         </div>
         <div class="turn-indicator" id="turnIndicator">Cargando...</div>
         <button class="btn" id="btnSpin">Girar la ruleta</button>
+        <div id="debugStatus" style="font-size:12px;color:#c98fb0;margin-top:6px;min-height:16px;"></div>
       </div>
 
       <div id="currentCardBox"></div>
@@ -540,37 +541,45 @@ async function joinRoom(){
 let totalSpins = 0;
 
 async function spinWheel(){
+  const dbg = document.getElementById('debugStatus');
+  dbg.textContent = "Leyendo sala...";
   const state = await getState();
   if(!state){
+    dbg.textContent = "❌ Falló la lectura de la sala";
     alert("No se pudo leer la sala. Revisa que ambos hayan entrado con el mismo código y que Firebase esté bien configurado.");
     return;
   }
   const myTurn = state.players[state.turnIndex % (state.players.length||1)] === ME;
   if(state.current){
-    alert("Ya hay una pregunta activa sin responder todavía. Respóndela antes de volver a girar.\n\nPregunta actual: " + state.current.text);
+    dbg.textContent = "⚠️ Hay una pregunta activa sin responder";
+    alert("Ya hay una pregunta activa sin responder todavía. Respóndela antes de volver a girar.\n\nPregunta actual: " + (state.current.text || "(pregunta/reto libre pendiente de escribir)"));
     return;
   }
   if(!myTurn){
+    dbg.textContent = "⚠️ No es tu turno";
     alert("No es tu turno todavía. Le toca a: " + state.players[state.turnIndex % state.players.length]);
     return;
   }
 
-  // Animamos primero, siempre, sin depender de nada más
   const wheel = document.getElementById('wheel');
   totalSpins += 4 + Math.random()*2;
   wheel.style.transform = `rotate(${totalSpins*360}deg)`;
   soundSpin();
+  dbg.textContent = "Girando... (espera 3 segundos)";
 
   const item = nextItem(state);
   if(!item){
-    setTimeout(()=> alert("¡Ya jugaron todas las preguntas y retos disponibles! Pueden agregar más propias."), 3000);
+    dbg.textContent = "⚠️ Banco agotado";
+    setTimeout(()=> alert("¡Ya jugaron todas las preguntas y retos disponibles!"), 3000);
     return;
   }
 
   setTimeout(async ()=>{
     try{
+      dbg.textContent = "Guardando resultado...";
       const fresh = await getState();
       if(!fresh){
+        dbg.textContent = "❌ Falló al releer la sala tras girar";
         alert("No se pudo volver a leer la sala después de girar. Revisa tu conexión e intenta de nuevo.");
         return;
       }
@@ -581,9 +590,12 @@ async function spinWheel(){
         fresh.current = {id:item.id, type:item.type, text:item.text, answers:{}};
       }
       await db.ref(roomKey()).set(fresh);
+      dbg.textContent = "✅ Listo, mostrando resultado";
       soundReveal();
       render();
+      setTimeout(()=>{ dbg.textContent = ""; }, 2000);
     }catch(e){
+      dbg.textContent = "❌ Error: " + (e && e.message ? e.message : e);
       alert("Error después de girar:\n" + (e && e.message ? e.message : e));
     }
   }, 3000);
