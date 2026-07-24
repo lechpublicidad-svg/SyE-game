@@ -439,18 +439,18 @@ async function renderCurrentCardAsync(state){
     return;
   }
 
-  const alreadyAnswered = c.answers && c.answers[ME];
+  const isTarget = c.targetPlayer === ME;
   box.innerHTML = `
     <div class="card">
       <span class="card-tag ${c.type==='reto'?'tag-reto':'tag-pregunta'}">${c.special?'✨ ':''}${c.type}</span>
       <div class="card-text">${c.text}</div>
-      ${alreadyAnswered ? `<div class="history-a"><b>Tu respuesta:</b> ${alreadyAnswered}</div>` : `
+      ${isTarget ? `
         <textarea id="answerBox" placeholder="Escribe tu respuesta..."></textarea>
         <button class="btn" id="btnAnswer" style="margin-top:10px;width:100%;">Responder</button>
-      `}
+      ` : `<div class="history-a">Esperando la respuesta de ${c.targetPlayer}...</div>`}
     </div>
   `;
-  if(!alreadyAnswered){
+  if(isTarget){
     document.getElementById('btnAnswer').onclick = submitAnswer;
   }
 }
@@ -461,10 +461,10 @@ async function submitFreeText(){
   if(!text) return;
   const state = await getState();
   if(!state || !state.current) return;
+  const other = state.players.find(p=>p!==ME) || ME;
   state.current.text = text;
   state.current.writtenBy = ME;
-  state.current.answers = state.current.answers || {};
-  state.current.answers[ME] = "✍️ (formuló esta " + state.current.type + ")";
+  state.current.targetPlayer = other;
   await setState(state);
   render();
 }
@@ -498,7 +498,16 @@ async function render(){
   const state = await getState();
   if(!state) return;
   renderTurn(state);
-  await renderCurrentCardAsync(state);
+
+  // Si la persona está escribiendo su respuesta o su pregunta/reto libre,
+  // no se vuelve a dibujar esa tarjeta (evita que el sondeo automático
+  // le borre lo que está escribiendo y le haga "parpadear" el teclado).
+  const activeId = document.activeElement && document.activeElement.id;
+  const isTyping = activeId === 'answerBox' || activeId === 'freeTextBox';
+  if(!isTyping){
+    await renderCurrentCardAsync(state);
+  }
+
   renderHistory(state);
   renderChat(state);
 }
@@ -589,9 +598,9 @@ async function spinWheel(){
       }
       fresh.usedIds.push(item.id);
       if(item.special){
-        fresh.current = {id:item.id, type:item.type, text:null, special:true, writtenBy:null, answers:{}};
+        fresh.current = {id:item.id, type:item.type, text:null, special:true, writtenBy:null, answers:{}, targetPlayer:null};
       } else {
-        fresh.current = {id:item.id, type:item.type, text:item.text, answers:{}};
+        fresh.current = {id:item.id, type:item.type, text:item.text, answers:{}, targetPlayer: ME};
       }
       const savePromise = db.ref(roomKey()).set(fresh);
       const timeoutPromise = new Promise((_, reject)=> setTimeout(()=> reject(new Error("TIMEOUT: la conexión tardó demasiado (posible foto muy pesada o mala señal)")), 8000));
@@ -615,12 +624,12 @@ async function submitAnswer(){
   if(!state.current) return;
   state.current.answers[ME] = text;
 
-  const numAnswers = Object.keys(state.current.answers).length;
-  if(numAnswers >= (state.players.length||1) && state.players.length>=2){
-    state.history.push(state.current);
-    state.current = null;
-    state.turnIndex = (state.turnIndex+1) % Math.max(state.players.length,1);
-  }
+  // La ronda se cierra apenas responde quien tenía que responder
+  // (quien giró la ruleta, o la otra persona si era pregunta/reto libre).
+  state.history.push(state.current);
+  state.current = null;
+  state.turnIndex = (state.turnIndex+1) % Math.max(state.players.length,1);
+
   await setState(state);
   soundAnswer();
   render();
