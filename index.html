@@ -305,10 +305,21 @@ const db = firebase.database();
 
 function roomKey(){ return `se-rooms/${ROOM}`; }
 
+function normalizeState(state){
+  if(!state) return state;
+  if(!Array.isArray(state.players)) state.players = state.players ? Object.values(state.players) : [];
+  if(!Array.isArray(state.usedIds)) state.usedIds = state.usedIds ? Object.values(state.usedIds) : [];
+  if(!Array.isArray(state.history)) state.history = state.history ? Object.values(state.history) : [];
+  if(!Array.isArray(state.chat)) state.chat = state.chat ? Object.values(state.chat) : [];
+  if(!Array.isArray(state.customItems)) state.customItems = state.customItems ? Object.values(state.customItems) : [];
+  if(typeof state.turnIndex !== 'number') state.turnIndex = 0;
+  return state;
+}
+
 async function getState(){
   try{
     const snap = await db.ref(roomKey()).once('value');
-    return snap.exists() ? snap.val() : null;
+    return snap.exists() ? normalizeState(snap.val()) : null;
   }catch(e){
     console.error("Firebase get error", e);
     window.__lastFirebaseError = e;
@@ -553,7 +564,14 @@ async function spinWheel(){
   soundSpin();
   dbg.textContent = "Girando... (espera 3 segundos)";
 
-  const item = nextItem(state);
+  let item;
+  try{
+    item = nextItem(state);
+  }catch(e){
+    dbg.textContent = "❌ Error al escoger pregunta: " + (e && e.message ? e.message : e);
+    alert("Error al escoger la pregunta/reto:\n" + (e && e.message ? e.message : e));
+    return;
+  }
   if(!item){
     dbg.textContent = "⚠️ Banco agotado";
     setTimeout(()=> alert("¡Ya jugaron todas las preguntas y retos disponibles!"), 3000);
